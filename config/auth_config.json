@@ -1,0 +1,14 @@
+{
+      "fggYTUbvmndHGhf": {
+        "secret_key_refresh": "vR3VJdxwCHjfKa926GkSqPYFAtMzXu",
+        "secret_key_public": "jraEsHVgZ3U8vPeq2wWm49dbLkB5hJ",
+        "secret_key_auth": "gjdg665MJGFhfg76nbvdfhgBDFHGnbvdfhg",
+        "role": "customer"
+    },
+    "YJmvfjhYTUTfdfgdj": {
+        "secret_key_refresh": "Nk4wFHJLG2BeEyUKgjaz9Ct7cXxDuA",
+        "secret_key_public": "Jh9ndGkgWa3BUtvfACVucPR2brjYF7",
+        "secret_key_auth": "kpFDuw4697J5qdmxtGv8MCeagSLWRzfHG76ndf",
+        "role": "admin"
+    }
+}
