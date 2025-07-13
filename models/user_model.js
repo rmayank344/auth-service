@@ -45,6 +45,22 @@ const USERMODEL = sequelize.define('user_model',
       type: DataTypes.DATEONLY,
       allowNull: true,
     },
+    otp: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    otp_expiry: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    reset_token: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    reset_token_expiry: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     is_active: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
