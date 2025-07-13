@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const AWS = require('aws-sdk');
+const crypto = require('crypto');
 const auth_configs = require("../config/auth_config.json");
 
 // Import Middleware
@@ -10,6 +11,8 @@ const { generate_public_token } = require("../middleware/authentication");
 const response_handler = require("../utils/response_handler");
 const { password_hashed, comparePassword } = require("../utils/password_verified");
 const { awsFileUpload, awsFileFetch } = require("../utils/aws_file_uploader");
+const { generateSecureOTP } = require("../utils/otp_related_file");
+const { sendResetPasswordLink, sendResetPasswordOtp } = require("../utils/email_integration");
 
 
 // Import Model
@@ -198,7 +201,7 @@ const get_user_all_profile = async (req, res) => {
     const user_data = await USERMODEL.findOne({ where: { user_id: userId, is_active: true }, raw: true });
     let image_data;
     if (user_data.profile_url != null) {
-       image_data = await awsFileFetch(user_data.profile_url, process.env.S3_BUCKET_NAME);
+      image_data = await awsFileFetch(user_data.profile_url, process.env.S3_BUCKET_NAME);
       user_data.profile_url = {
         static_url: image_data.static_url,
         signed_url: image_data.signed_url,
@@ -229,7 +232,7 @@ const get_user_all_profile = async (req, res) => {
 const refresh_auth_token = async (req, res) => {
   try {
     const customer_api_key = req.header('cust-x-api-key');
-    if (!customer_api_key){
+    if (!customer_api_key) {
       return response_handler.send_error_response(
         res, "Customer Api key is missing", 404
       )
@@ -280,4 +283,210 @@ const refresh_auth_token = async (req, res) => {
   }
 };
 
-module.exports = { user_signup, user_login, user_edit_profile, get_user_all_profile, refresh_auth_token };
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/otp-forget-password
+ * Table used : 
+ * 
+ */
+
+const user_forget_password_via_otp = async (req, res) => {
+  let otp_time = 1;
+  try {
+    const { email } = req.body;
+    const user = await USERMODEL.findOne({ where: { email: email }, attributes: ['email', 'user_id'], raw: true });
+    if (!user) return response_handler.send_error_response(res, "user not found.", 404);
+    const otp = await generateSecureOTP();
+    const otpExpiry = new Date(Date.now() + otp_time * 60 * 1000);
+    const update_otp = await USERMODEL.update(
+      { otp: otp, otp_expiry: otpExpiry },
+      {
+        where: {
+          user_id: user.user_id,
+          email: user.email
+        }
+      }
+    );
+    if (update_otp) {
+      const email_status = await sendResetPasswordOtp(user.email, otp, otp_time);
+      return response_handler.send_success_response(
+        res,
+        {
+          "email_status": email_status
+        },
+        201
+      );
+    }
+  }
+  catch (err) {
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/otp-reset-password
+ * Table used : 
+ * 
+ */
+
+const reset_password_via_otp = async (req, res) => {
+  try {
+    const {email, newPassword, confirmPassword } = req.body;
+    if (!newPassword || !confirmPassword) return response_handler.send_error_response(res, "Both fields are required.", 400);
+    if (newPassword !== confirmPassword) return response_handler.send_error_response(res, "Both Password do not match.", 400);
+    const user = await USERMODEL.findOne({ where: { email: email }, attributes: ['user_id'], raw: true });
+    let user_updated;
+
+    if (newPassword == confirmPassword) {
+      const hashPassword = await password_hashed(newPassword);
+      user_updated = await USERMODEL.update(
+        { password: hashPassword },
+        {
+          where: {
+            user_id: user.user_id,
+          }
+        }
+      );
+    }
+    if (user_updated) return response_handler.send_success_response(res, "Password reset successful.", 201);
+  }
+  catch (err) {
+    console.log(err)
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/hash-forget-password
+ * Table used : 
+ * 
+ */
+
+const user_forget_password_via_hashing = async (req, res) => {
+  let token_time = 3;
+  try {
+    const { email } = req.body;
+    const user = await USERMODEL.findOne({ where: { email: email }, attributes: ['email', 'user_id'], raw: true });
+    if (!user) return response_handler.send_error_response(res, "user not found.", 404);
+    const random_token = crypto.randomBytes(32).toString('hex');
+    const hash_random_token = await bcrypt.hash(random_token, 15);
+    const expiry = new Date(Date.now() + token_time * 60 * 1000);
+    const user_token = await USERMODEL.update(
+      { reset_token: hash_random_token, reset_token_expiry: expiry },
+      {
+        where: {
+          user_id: user.user_id,
+          email: user.email
+        },
+      }
+    );
+    if (user_token) {
+      const email_status = await sendResetPasswordLink(user.email, random_token, token_time);
+      return response_handler.send_success_response(
+        res,
+        {
+          "email_status": email_status
+        },
+        201
+      );
+    }
+  }
+  catch (err) {
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/hash-reset-password?token={}
+ * Table used : 
+ * 
+ */
+
+const reset_password_via_hashing = async (req, res) => {
+  try {
+    const { token } = req.query;
+    const { email, newPassword, confirmPassword } = req.body;
+    if (!newPassword || !confirmPassword) return response_handler.send_error_response(res, "Both fields are required.", 400);
+    if (newPassword !== confirmPassword) return response_handler.send_error_response(res, "Both Password do not match.", 400);
+    const user = await USERMODEL.findOne({ where: { email: email }, attributes: ['user_id', 'reset_token', 'reset_token_expiry'], raw: true });
+    if (user.reset_token == null) return response_handler.send_error_response(res, "Reset token not found.", 404);
+    const hash_token = await bcrypt.compare(token, user.reset_token);
+    if (!hash_token) return response_handler.send_error_response(res, "Invalid URL.", 403);
+    let user_updated;
+    if (new Date() > user.reset_token_expiry) {
+      user_updated = await USERMODEL.update(
+        { reset_token: null, reset_token_expiry: null },
+        {
+          where: {
+            user_id: user.user_id,
+          }
+        }
+      );
+      if (user_updated) return response_handler.send_error_response(res, "Password reset link has expired.", 401);
+    }
+
+    if (newPassword == confirmPassword) {
+      const hashPassword = await password_hashed(newPassword);
+      user_updated = await USERMODEL.update(
+        { password: hashPassword, reset_token: null, reset_token_expiry: null },
+        {
+          where: {
+            user_id: user.user_id,
+          }
+        }
+      );
+    }
+    if (user_updated) return response_handler.send_success_response(res, "Password reset successful.", 201);
+  }
+  catch (err) {
+    console.log(err)
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
+module.exports = {
+  user_signup,
+  user_login,
+  user_edit_profile,
+  get_user_all_profile,
+  refresh_auth_token,
+  user_forget_password_via_otp,
+  reset_password_via_otp,
+  user_forget_password_via_hashing,
+  reset_password_via_hashing,
+};
