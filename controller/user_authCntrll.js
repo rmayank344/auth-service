@@ -17,6 +17,7 @@ const { sendResetPasswordLink, sendResetPasswordOtp } = require("../utils/email_
 
 // Import Model
 const USERMODEL = require("../models/user_model");
+const ADDRESSMODEL = require("../models/address_model");
 
 /**
  * 
@@ -191,7 +192,7 @@ const user_edit_profile = async (req, res) => {
 
 /**
  * 
- * ENDPOINT : /api/user/v1/auth-service/get-profile
+ * ENDPOINT : /api/user/v1/auth-service/get-me-profile
  * Table used : user_model
  * 
  */
@@ -207,7 +208,22 @@ const get_user_all_profile = async (req, res) => {
         signed_url: image_data.signed_url,
       };
     }
-    return response_handler.send_success_response(res, user_data, 200);
+    const data = ['password', 'otp', 'otp_expiry', 'reset_token', 'reset_token_expiry', 'is_active'];
+    data.forEach(key => {
+      delete user_data[key];
+    });
+
+    const user_address = await ADDRESSMODEL.findOne({ 
+      where: { user_id: userId, is_active: true },
+      attributes:['address_line1','address_line2','city','pincode','state'], 
+      raw: true });
+    
+      const user = {
+        ...user_data,
+        address: user_address || null
+      };
+
+    return response_handler.send_success_response(res, user, 200);
   }
   catch (err) {
     if (process.env.DEPLOYMENT == 'prod') {
@@ -479,6 +495,99 @@ const reset_password_via_hashing = async (req, res) => {
   }
 };
 
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/add-address
+ * Table used : 
+ * 
+ */
+
+const user_add_address = async (req, res) => {
+  const userId = req.id;
+  try{
+    const {address_line1, address_line2, state, city, pincode} = req.body;
+    await ADDRESSMODEL.update({is_active: false }, {where:{ user_id: userId, is_active: true}});
+    const user_address = await ADDRESSMODEL.create({
+      address_line1,
+      address_line2,
+      city,
+      state,
+      pincode,
+      user_id: req.id,
+      is_active: true
+    });
+    return response_handler.send_success_response(res, "Address added successful.", 201);
+  }
+  catch (err) {
+    console.log(err)
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/get-address
+ * Table used : 
+ * 
+ */
+
+const get_add_address = async (req, res) => {
+  try{
+    const userId = req.id;
+    const user_address = await ADDRESSMODEL.findOne({where:{user_id: userId, is_active: true}, raw: true});
+    return response_handler.send_success_response(res, {"user_address:": user_address}, 202);
+  }
+   catch (err) {
+    console.log(err)
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/get-user?userId={}
+ * Table used : 
+ * 
+ */
+
+const get_user_detail = async (req, res) => {
+  try{
+    const {userId} = req.query;
+
+    const user = await USERMODEL.findOne({where:{user_id: userId, is_active: true}, attributes:['name','email','role'], raw: true});
+    if(user) return response_handler.send_success_response(res, user, 202);
+    return response_handler.send_error_response(res,"user not found.", 404);
+  }
+    catch (err) {
+    console.log(err)
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
 module.exports = {
   user_signup,
   user_login,
@@ -489,4 +598,7 @@ module.exports = {
   reset_password_via_otp,
   user_forget_password_via_hashing,
   reset_password_via_hashing,
+  user_add_address,
+  get_add_address,
+  get_user_detail
 };
