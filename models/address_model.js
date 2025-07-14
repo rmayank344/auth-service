@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require("../config/db_config");
+const { toDefaultValue } = require('sequelize/lib/utils');
 
 const ADDRESSMODEL = sequelize.define('address_model',
   {
@@ -7,6 +8,14 @@ const ADDRESSMODEL = sequelize.define('address_model',
       type: DataTypes.INTEGER,
       primaryKey: true,
       autoIncrement: true,
+    },
+    address_line1: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    address_line2: {
+      type: DataTypes.STRING,
+      allowNull: false,
     },
     city: {
       type: DataTypes.STRING,
@@ -29,6 +38,10 @@ const ADDRESSMODEL = sequelize.define('address_model',
       },
       onUpdate: 'CASCADE',
       onDelete: 'CASCADE',
+    },
+    is_active:{
+      type: DataTypes.INTEGER,
+      defaultValue: true
     },
   },
   {
