@@ -73,7 +73,7 @@ const USERMODEL = sequelize.define('user_model',
   }
 );
 
-// sequelize.sync({ force: true }) // Uncomment this if you want to sync the model with the database
+// sequelize.sync({ force: false }) // Uncomment this if you want to sync the model with the database
 //   .then(() => {
 //     console.log('Database & tables created!');
 // });
