@@ -32,7 +32,7 @@ app.get('/api/user/v1/auth-service', (req, res) => {
 
 
 app.use((req, res, next) => {
-  console.log(`Received request on instance: ${os.hostname()} for ${req.url}`);
+  console.log(`Received request on instance: ${process.pid} and ${os.hostname()} for ${req.url}`);
   next();
 });
 
@@ -55,7 +55,6 @@ app.use(cors({
 //auth-service routes
 app.use('/api/user/v1/auth-service', require("./routes/user_routes"));
 
-
 app.listen(process.env.PORT, '0.0.0.0', () => {
-  console.log(`Server is running on port ${process.env.PORT}`);
+  console.log(`server is running on port ${process.env.PORT}`);
 });
