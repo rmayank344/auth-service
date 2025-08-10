@@ -54,6 +54,5 @@ app.use(cors({
 
 //auth-service routes
 app.use('/api/user/v1/auth-service', require("./routes/user_routes"));
-
-
 module.exports = app;
+
