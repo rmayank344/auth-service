@@ -3,7 +3,7 @@ const app = express();
 const cors = require('cors');
 const os = require('os');
 const {connectRedis} = require("./config/redis_config");
-require("dotenv").config();
+// require("dotenv").config();
 require("./config/db_config");
 
 
@@ -32,7 +32,7 @@ app.get('/api/user/v1/auth-service', (req, res) => {
 
 
 app.use((req, res, next) => {
-  console.log(`Received request on instance: ${os.hostname()} for ${req.url}`);
+  console.log(`Handled by Worker PID: ${process.pid}, Host: ${os.hostname()}, URL: ${req.url}`);
   next();
 });
 
@@ -56,6 +56,4 @@ app.use(cors({
 app.use('/api/user/v1/auth-service', require("./routes/user_routes"));
 
 
-app.listen(process.env.PORT, () => {
-  console.log(`Server is running on port ${process.env.PORT}`);
-});
+module.exports = app;
