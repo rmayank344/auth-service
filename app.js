@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 const cors = require('cors');
 const os = require('os');
-const {connectRedis} = require("./config/redis_config");
+// const {connectRedis} = require("./config/redis_config");
 require("dotenv").config();
 require("./config/db_config");
 
