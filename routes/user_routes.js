@@ -38,6 +38,6 @@ router.post("/hash-reset-password",reset_password_via_hashing);
 router.post("/otp-validate", reset_password_otp_validate);
 router.post("/add-address", validate_auth_token, validate_refresh_token, user_add_address);
 router.get("/get-address", validate_auth_token, validate_refresh_token, get_add_address);
-router.get("/get-user", validate_auth_token, validate_refresh_token,get_user_detail);
+router.post("/get-user", validate_auth_token, validate_refresh_token, get_user_detail);
 
 module.exports = router;
