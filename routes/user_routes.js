@@ -21,7 +21,11 @@ const {
   reset_password_via_hashing,
   user_add_address,
   get_add_address,
-  get_user_detail
+  get_user_detail,
+  createSNSTopicHandler,
+  subscribe_SNS_Topic_Handler,
+  publishNotificationHandler,
+  createCPUAlarm
 } = require("../controller/user_authCntrll");
 
 
@@ -39,5 +43,9 @@ router.post("/otp-validate", reset_password_otp_validate);
 router.post("/add-address", validate_auth_token, validate_refresh_token, user_add_address);
 router.get("/get-address", validate_auth_token, validate_refresh_token, get_add_address);
 router.get("/get-user", validate_auth_token, validate_refresh_token,get_user_detail);
+router.post("/create-sns-topic",validate_auth_token, validate_refresh_token,createSNSTopicHandler); 
+router.post("/subscribe-sns-topic",validate_auth_token, validate_refresh_token,subscribe_SNS_Topic_Handler);
+router.post("/push-notification-subscribe-sns-topic",validate_auth_token, validate_refresh_token,publishNotificationHandler);
+router.post("/create-cpu-alarm",validate_auth_token, validate_refresh_token,createCPUAlarm);
 
 module.exports = router;

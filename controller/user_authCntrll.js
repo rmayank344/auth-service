@@ -13,6 +13,8 @@ const { password_hashed, comparePassword } = require("../utils/password_verified
 const { awsFileUpload, awsFileFetch } = require("../utils/aws_file_uploader");
 const { generateSecureOTP } = require("../utils/otp_related_file");
 const { sendResetPasswordLink, sendResetPasswordOtp } = require("../utils/email_integration");
+const { AWSEmailCntrll } = require("../utils/aws_email_sending");
+const { createSNSTopic, subscribeToTopic, publishMessageSNSTopic, alertCPUAlarm } = require("../utils/aws_sns_config");
 
 
 // Import Model
@@ -213,15 +215,16 @@ const get_user_all_profile = async (req, res) => {
       delete user_data[key];
     });
 
-    const user_address = await ADDRESSMODEL.findOne({ 
+    const user_address = await ADDRESSMODEL.findOne({
       where: { user_id: userId, is_active: true },
-      attributes:['address_line1','address_line2','city','pincode','state'], 
-      raw: true });
-    
-      const user = {
-        ...user_data,
-        address: user_address || null
-      };
+      attributes: ['address_line1', 'address_line2', 'city', 'pincode', 'state'],
+      raw: true
+    });
+
+    const user = {
+      ...user_data,
+      address: user_address || null
+    };
 
     return response_handler.send_success_response(res, user, 200);
   }
@@ -324,7 +327,14 @@ const user_forget_password_via_otp = async (req, res) => {
       }
     );
     if (update_otp) {
-      const email_status = await sendResetPasswordOtp(user.email, otp, otp_time);
+      // const email_status = await sendResetPasswordOtp(user.email, otp, otp_time);
+      const subject = "Your OTP for Password Reset";
+      const html = `
+    <p>Hi,</p>
+    <p>Your OTP is <b>${otp}</b>. It will expire in ${otp_time} minutes.</p>
+    <p>If you didn't request this, please ignore.</p>
+  `;
+      const email_status = await AWSEmailCntrll(user.email, otp, otp_time, subject, html);
       return response_handler.send_success_response(
         res,
         {
@@ -356,7 +366,7 @@ const user_forget_password_via_otp = async (req, res) => {
 
 const reset_password_via_otp = async (req, res) => {
   try {
-    const {email, newPassword, confirmPassword } = req.body;
+    const { email, newPassword, confirmPassword } = req.body;
     if (!newPassword || !confirmPassword) return response_handler.send_error_response(res, "Both fields are required.", 400);
     if (newPassword !== confirmPassword) return response_handler.send_error_response(res, "Both Password do not match.", 400);
     const user = await USERMODEL.findOne({ where: { email: email }, attributes: ['user_id'], raw: true });
@@ -504,9 +514,9 @@ const reset_password_via_hashing = async (req, res) => {
 
 const user_add_address = async (req, res) => {
   const userId = req.id;
-  try{
-    const {address_line1, address_line2, state, city, pincode} = req.body;
-    await ADDRESSMODEL.update({is_active: false }, {where:{ user_id: userId, is_active: true}});
+  try {
+    const { address_line1, address_line2, state, city, pincode } = req.body;
+    await ADDRESSMODEL.update({ is_active: false }, { where: { user_id: userId, is_active: true } });
     const user_address = await ADDRESSMODEL.create({
       address_line1,
       address_line2,
@@ -540,12 +550,12 @@ const user_add_address = async (req, res) => {
  */
 
 const get_add_address = async (req, res) => {
-  try{
+  try {
     const userId = req.id;
-    const user_address = await ADDRESSMODEL.findOne({where:{user_id: userId, is_active: true}, raw: true});
-    return response_handler.send_success_response(res, {"user_address:": user_address}, 202);
+    const user_address = await ADDRESSMODEL.findOne({ where: { user_id: userId, is_active: true }, raw: true });
+    return response_handler.send_success_response(res, { "user_address:": user_address }, 202);
   }
-   catch (err) {
+  catch (err) {
     console.log(err)
     if (process.env.DEPLOYMENT == 'prod') {
       return response_handler.send_error_response(
@@ -567,15 +577,134 @@ const get_add_address = async (req, res) => {
  */
 
 const get_user_detail = async (req, res) => {
-  try{
-    const {userId} = req.query;
+  try {
+    const { userId } = req.query;
 
-    const user = await USERMODEL.findOne({where:{user_id: userId, is_active: true}, attributes:['name','email','role'], raw: true});
-    if(user) return response_handler.send_success_response(res, user, 202);
-    return response_handler.send_error_response(res,"user not found.", 404);
+    const user = await USERMODEL.findOne({ where: { user_id: userId, is_active: true }, attributes: ['name', 'email', 'role'], raw: true });
+    if (user) return response_handler.send_success_response(res, user, 202);
+    return response_handler.send_error_response(res, "user not found.", 404);
   }
-    catch (err) {
+  catch (err) {
     console.log(err)
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/create-sns-topic
+ * Table used : 
+ * 
+ */
+
+const createSNSTopicHandler = async (req, res) => {
+  try {
+    const { topicName } = req.body;
+    if (!topicName) {
+      return response_handler.send_error_response(res, "Topic name is required.", 400);
+    }
+    const topicArn = await createSNSTopic(topicName);
+    return response_handler.send_success_response(res, { "Topic ARN:": topicArn }, 201);
+  }
+  catch (err) {
+    console.log(err)
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/subscribe-sns-topic
+ * Table used : publishNotificationHandler 
+ * 
+ */
+
+const subscribe_SNS_Topic_Handler = async (req, res) => {
+  try {
+    const { topicArn, protocol, endpoint } = req.body;
+    if (!topicArn || !protocol || !endpoint) {
+      return response_handler.send_error_response(res, 'topicArn, protocol and endpoint are required', 400);
+    }
+    const subscriptionArn = await subscribeToTopic(topicArn, protocol, endpoint);
+    return response_handler.send_success_response(res, { "subscribed": subscriptionArn }, 201);
+  }
+  catch (err) {
+    console.log(err)
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/push-notification-subscribe-sns-topic
+ * Table used :  
+ * 
+ */
+
+const publishNotificationHandler = async (req, res) => {
+  try {
+    const { topicArn, subject, message } = req.body;
+    if (!topicArn || !subject || !message) {
+      return response_handler.send_error_response(res, 'topicArn, subject and message are required', 400);
+    }
+    const messageId = await publishMessageSNSTopic(topicArn, message, subject);
+    return response_handler.send_success_response(res, { "Notification sent": messageId }, 201);
+  }
+  catch (err) {
+    console.log(err)
+    if (process.env.DEPLOYMENT == 'prod') {
+      return response_handler.send_error_response(
+        res, 'Something went wrong', 500
+      )
+    } else {
+      return response_handler.send_error_response(
+        res, `Something went wrong: ${err}`, 500
+      )
+    }
+  }
+};
+
+/**
+ * 
+ * ENDPOINT : /api/user/v1/auth-service/create-cpu-alarm
+ * Table used :  
+ * 
+ */
+
+const createCPUAlarm = async (req, res) => {
+  try{
+    const {instanceId, topicArn} = req.body;
+
+    if(!instanceId || !topicArn) return response_handler.send_error_response(res, "Both field are required.", 400);
+
+    const alarmData = await alertCPUAlarm(instanceId, topicArn);
+    return response_handler.send_success_response(res, { "Alarm sent": alarmData }, 201);
+  }
+  catch(err){
     if (process.env.DEPLOYMENT == 'prod') {
       return response_handler.send_error_response(
         res, 'Something went wrong', 500
@@ -600,5 +729,9 @@ module.exports = {
   reset_password_via_hashing,
   user_add_address,
   get_add_address,
-  get_user_detail
+  get_user_detail,
+  createSNSTopicHandler,
+  subscribe_SNS_Topic_Handler,
+  publishNotificationHandler,
+  createCPUAlarm
 };
